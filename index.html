@@ -1,0 +1,526 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fairway Finder — US Golf Course Map</title>
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css">
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css">
+
+<style>
+  :root {
+    --bg: #f6f7f5;
+    --panel: #ffffff;
+    --ink: #1a1f1a;
+    --ink-soft: #5b6660;
+    --line: #e3e7e1;
+    --accent: #1f5a3a;       /* deep fairway green */
+    --accent-soft: #e9f1eb;
+    --accent-ink: #163f29;
+    --warn: #b6651d;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    color: var(--ink);
+    background: var(--bg);
+    display: grid;
+    grid-template-columns: 340px 1fr;
+    grid-template-rows: 100%;
+    overflow: hidden;
+  }
+
+  /* ---------- sidebar ---------- */
+  aside {
+    background: var(--panel);
+    border-right: 1px solid var(--line);
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+  header {
+    padding: 16px 18px 12px;
+    border-bottom: 1px solid var(--line);
+  }
+  header h1 {
+    margin: 0;
+    font-size: 18px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    color: var(--accent-ink);
+  }
+  header .tag {
+    margin-top: 2px;
+    font-size: 12px;
+    color: var(--ink-soft);
+  }
+
+  .filters {
+    padding: 14px 18px;
+    border-bottom: 1px solid var(--line);
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .filters label {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--ink-soft);
+    font-weight: 600;
+    display: block;
+    margin-bottom: 4px;
+  }
+  .search {
+    position: relative;
+  }
+  .search input {
+    width: 100%;
+    padding: 8px 10px 8px 30px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    font: inherit;
+    background: var(--bg);
+  }
+  .search input:focus {
+    outline: none;
+    border-color: var(--accent);
+    background: white;
+  }
+  .search svg {
+    position: absolute;
+    left: 9px;
+    top: 9px;
+    width: 14px;
+    height: 14px;
+    color: var(--ink-soft);
+  }
+
+  .chip-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .chip {
+    border: 1px solid var(--line);
+    background: white;
+    border-radius: 999px;
+    padding: 5px 11px;
+    font-size: 12px;
+    color: var(--ink);
+    cursor: pointer;
+    user-select: none;
+  }
+  .chip:hover { border-color: #c5ccc6; }
+  .chip.active {
+    background: var(--accent-soft);
+    border-color: var(--accent);
+    color: var(--accent-ink);
+    font-weight: 600;
+  }
+
+  .toggle-row {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .toggle {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    user-select: none;
+    font-size: 13px;
+  }
+  .toggle input { margin: 0; accent-color: var(--accent); }
+
+  .actions {
+    display: flex;
+    gap: 8px;
+  }
+  .btn {
+    flex: 1;
+    border: 1px solid var(--line);
+    background: white;
+    padding: 7px 10px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    color: var(--ink);
+  }
+  .btn:hover { border-color: #c5ccc6; }
+  .btn.primary {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: white;
+  }
+  .btn.primary:hover { background: var(--accent-ink); }
+
+  .summary {
+    padding: 10px 18px;
+    font-size: 12px;
+    color: var(--ink-soft);
+    border-bottom: 1px solid var(--line);
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+  }
+  .summary strong { color: var(--ink); font-weight: 600; }
+
+  /* ---------- list ---------- */
+  .list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 4px 0 18px;
+  }
+  .list-item {
+    padding: 10px 18px;
+    border-bottom: 1px solid var(--line);
+    cursor: pointer;
+  }
+  .list-item:hover { background: var(--accent-soft); }
+  .list-item.active { background: var(--accent-soft); }
+  .list-item .name {
+    font-weight: 600;
+    font-size: 13px;
+    color: var(--ink);
+    line-height: 1.3;
+  }
+  .list-item .meta {
+    margin-top: 2px;
+    font-size: 12px;
+    color: var(--ink-soft);
+  }
+  .list-item .badges {
+    margin-top: 5px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+  .badge {
+    font-size: 10px;
+    padding: 2px 6px;
+    border-radius: 4px;
+    background: var(--bg);
+    color: var(--ink-soft);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    font-weight: 600;
+  }
+  .badge.holes { background: var(--accent-soft); color: var(--accent-ink); }
+  .list-more {
+    padding: 14px 18px;
+    font-size: 12px;
+    color: var(--ink-soft);
+    text-align: center;
+    font-style: italic;
+  }
+  .list-empty {
+    padding: 30px 18px;
+    text-align: center;
+    color: var(--ink-soft);
+    font-size: 13px;
+  }
+
+  /* ---------- map ---------- */
+  #map { height: 100%; width: 100%; }
+  .leaflet-popup-content {
+    margin: 12px 14px;
+    font: inherit;
+    min-width: 200px;
+  }
+  .popup-name {
+    font-weight: 600;
+    font-size: 14px;
+    color: var(--accent-ink);
+    line-height: 1.3;
+  }
+  .popup-meta {
+    margin-top: 4px;
+    font-size: 12px;
+    color: var(--ink-soft);
+  }
+  .popup-meta a { color: var(--accent); text-decoration: none; }
+  .popup-meta a:hover { text-decoration: underline; }
+  .popup-badges {
+    margin-top: 8px;
+    display: flex;
+    gap: 4px;
+    flex-wrap: wrap;
+  }
+
+  /* loading splash */
+  .loading {
+    position: fixed; inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg);
+    z-index: 9999;
+    color: var(--ink-soft);
+    font-size: 13px;
+  }
+</style>
+</head>
+<body>
+
+<div class="loading" id="loading">Loading US golf courses…</div>
+
+<aside>
+  <header>
+    <h1>Fairway Finder</h1>
+    <div class="tag">US golf courses · OpenStreetMap data</div>
+  </header>
+
+  <div class="filters">
+    <div>
+      <label for="q">Search by name</label>
+      <div class="search">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+        <input id="q" type="text" placeholder="e.g. Pebble Beach, Augusta…" autocomplete="off">
+      </div>
+    </div>
+
+    <div>
+      <label>Holes</label>
+      <div class="chip-row" id="holesChips">
+        <span class="chip active" data-holes="any">Any</span>
+        <span class="chip" data-holes="9">9</span>
+        <span class="chip" data-holes="18">18</span>
+        <span class="chip" data-holes="27+">27+</span>
+      </div>
+    </div>
+
+    <div>
+      <label>Must have</label>
+      <div class="toggle-row">
+        <label class="toggle"><input type="checkbox" id="reqWebsite"> Website</label>
+        <label class="toggle"><input type="checkbox" id="reqPhone"> Phone number</label>
+      </div>
+    </div>
+
+    <div class="actions">
+      <button class="btn primary" id="nearMe">Near me</button>
+      <button class="btn" id="reset">Reset</button>
+    </div>
+  </div>
+
+  <div class="summary">
+    <span><strong id="visibleCount">0</strong> courses in view</span>
+    <span id="totalNote"></span>
+  </div>
+
+  <div class="list" id="list"></div>
+</aside>
+
+<div id="map"></div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+        integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+<script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+<script src="courses.js"></script>
+
+<script>
+(function () {
+  const courses = window.GOLF_COURSES || [];
+
+  // ----- map setup -----
+  const map = L.map('map', { zoomControl: true }).setView([39.5, -98.5], 4);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19,
+    attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+  }).addTo(map);
+
+  const cluster = L.markerClusterGroup({
+    chunkedLoading: true,
+    showCoverageOnHover: false,
+    spiderfyOnMaxZoom: true,
+    maxClusterRadius: 50,
+  });
+  map.addLayer(cluster);
+
+  // small green flag marker
+  const flagIcon = L.divIcon({
+    className: 'flag-icon',
+    html: '<svg width="22" height="26" viewBox="0 0 22 26"><line x1="4" y1="2" x2="4" y2="24" stroke="#1a1f1a" stroke-width="1.5"/><path d="M4 3 L18 6 L4 10 Z" fill="#1f5a3a" stroke="#163f29" stroke-width="0.5"/><circle cx="4" cy="24" r="2" fill="#1a1f1a"/></svg>',
+    iconSize: [22, 26],
+    iconAnchor: [4, 24],
+    popupAnchor: [0, -22],
+  });
+
+  // ----- build markers once -----
+  const idToMarker = new Map();
+  const allMarkers = [];
+  for (const c of courses) {
+    const m = L.marker([c.lat, c.lon], { icon: flagIcon });
+    m._course = c;
+    m.bindPopup(() => popupHtml(c), { closeButton: true });
+    idToMarker.set(c.id, m);
+    allMarkers.push(m);
+  }
+
+  function popupHtml(c) {
+    const addr = [c.street, c.city, c.state, c.postcode].filter(Boolean).join(', ');
+    const badges = [];
+    if (c.holes) badges.push(`<span class="badge holes">${c.holes} holes</span>`);
+    if (c.par) badges.push(`<span class="badge">par ${c.par}</span>`);
+    let html = `<div class="popup-name">${escapeHtml(c.name)}</div>`;
+    if (addr) html += `<div class="popup-meta">${escapeHtml(addr)}</div>`;
+    const links = [];
+    if (c.phone) links.push(`<a href="tel:${escapeAttr(c.phone)}">${escapeHtml(c.phone)}</a>`);
+    if (c.website) links.push(`<a href="${escapeAttr(c.website)}" target="_blank" rel="noopener">Website ↗</a>`);
+    if (links.length) html += `<div class="popup-meta">${links.join(' · ')}</div>`;
+    if (badges.length) html += `<div class="popup-badges">${badges.join('')}</div>`;
+    return html;
+  }
+
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+  }
+  function escapeAttr(s) { return escapeHtml(s); }
+
+  // ----- filter state -----
+  const filters = {
+    q: '',
+    holes: 'any',       // 'any' | '9' | '18' | '27+'
+    reqWebsite: false,
+    reqPhone: false,
+  };
+
+  function matchesFilters(c) {
+    if (filters.q) {
+      const q = filters.q.toLowerCase();
+      const hay = (c.name + ' ' + (c.city||'') + ' ' + (c.state||'')).toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    if (filters.holes !== 'any') {
+      if (!c.holes) return false;
+      if (filters.holes === '27+' ? c.holes < 27 : c.holes !== Number(filters.holes)) return false;
+    }
+    if (filters.reqWebsite && !c.website) return false;
+    if (filters.reqPhone && !c.phone) return false;
+    return true;
+  }
+
+  // ----- apply filters: rebuild marker layer -----
+  let lastFilteredMarkers = [];
+  function applyFilters() {
+    const filtered = allMarkers.filter(m => matchesFilters(m._course));
+    cluster.clearLayers();
+    cluster.addLayers(filtered);
+    lastFilteredMarkers = filtered;
+    refreshList();
+  }
+
+  // ----- sidebar list: shows what's currently in the map viewport -----
+  const listEl = document.getElementById('list');
+  const visibleCountEl = document.getElementById('visibleCount');
+  const totalNoteEl = document.getElementById('totalNote');
+  const LIST_LIMIT = 100;
+
+  function refreshList() {
+    const bounds = map.getBounds();
+    const visible = lastFilteredMarkers.filter(m => bounds.contains(m.getLatLng()));
+    visibleCountEl.textContent = visible.length.toLocaleString();
+    totalNoteEl.textContent = lastFilteredMarkers.length === courses.length
+      ? `of ${courses.length.toLocaleString()} total`
+      : `of ${lastFilteredMarkers.length.toLocaleString()} matching`;
+
+    if (visible.length === 0) {
+      listEl.innerHTML = `<div class="list-empty">No courses in view. Zoom out or pan the map.</div>`;
+      return;
+    }
+
+    visible.sort((a, b) => a._course.name.localeCompare(b._course.name));
+    const shown = visible.slice(0, LIST_LIMIT);
+
+    listEl.innerHTML = shown.map(m => {
+      const c = m._course;
+      const loc = [c.city, c.state].filter(Boolean).join(', ') || '—';
+      const badges = [];
+      if (c.holes) badges.push(`<span class="badge holes">${c.holes} holes</span>`);
+      if (c.website) badges.push(`<span class="badge">web</span>`);
+      if (c.phone) badges.push(`<span class="badge">phone</span>`);
+      return `<div class="list-item" data-id="${c.id}">
+        <div class="name">${escapeHtml(c.name)}</div>
+        <div class="meta">${escapeHtml(loc)}</div>
+        ${badges.length ? `<div class="badges">${badges.join('')}</div>` : ''}
+      </div>`;
+    }).join('') + (visible.length > LIST_LIMIT
+      ? `<div class="list-more">+ ${(visible.length - LIST_LIMIT).toLocaleString()} more — zoom in or filter further</div>`
+      : '');
+
+    for (const el of listEl.querySelectorAll('.list-item')) {
+      el.addEventListener('click', () => {
+        const id = el.dataset.id;
+        const m = idToMarker.get(id);
+        if (!m) return;
+        map.setView(m.getLatLng(), Math.max(map.getZoom(), 13), { animate: true });
+        m.openPopup();
+        for (const x of listEl.querySelectorAll('.list-item.active')) x.classList.remove('active');
+        el.classList.add('active');
+      });
+    }
+  }
+
+  map.on('moveend', refreshList);
+
+  // ----- wire up filter UI -----
+  const qInput = document.getElementById('q');
+  let qDebounce;
+  qInput.addEventListener('input', () => {
+    clearTimeout(qDebounce);
+    qDebounce = setTimeout(() => {
+      filters.q = qInput.value.trim();
+      applyFilters();
+    }, 120);
+  });
+
+  document.getElementById('holesChips').addEventListener('click', e => {
+    const chip = e.target.closest('.chip');
+    if (!chip) return;
+    for (const c of document.querySelectorAll('#holesChips .chip')) c.classList.remove('active');
+    chip.classList.add('active');
+    filters.holes = chip.dataset.holes;
+    applyFilters();
+  });
+
+  document.getElementById('reqWebsite').addEventListener('change', e => {
+    filters.reqWebsite = e.target.checked; applyFilters();
+  });
+  document.getElementById('reqPhone').addEventListener('change', e => {
+    filters.reqPhone = e.target.checked; applyFilters();
+  });
+
+  document.getElementById('reset').addEventListener('click', () => {
+    qInput.value = '';
+    document.getElementById('reqWebsite').checked = false;
+    document.getElementById('reqPhone').checked = false;
+    for (const c of document.querySelectorAll('#holesChips .chip')) c.classList.remove('active');
+    document.querySelector('#holesChips .chip[data-holes="any"]').classList.add('active');
+    filters.q = ''; filters.holes = 'any'; filters.reqWebsite = false; filters.reqPhone = false;
+    map.setView([39.5, -98.5], 4);
+    applyFilters();
+  });
+
+  document.getElementById('nearMe').addEventListener('click', () => {
+    if (!navigator.geolocation) { alert('Geolocation not available'); return; }
+    navigator.geolocation.getCurrentPosition(
+      pos => map.setView([pos.coords.latitude, pos.coords.longitude], 11),
+      err => alert('Could not get your location: ' + err.message)
+    );
+  });
+
+  // ----- boot -----
+  applyFilters();
+  document.getElementById('loading').remove();
+})();
+</script>
+
+</body>
+</html>
